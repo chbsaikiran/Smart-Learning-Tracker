@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Smart Learning Tracker</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1>Smart Learning Tracker</h1>
+        <p class="sub">Today’s learning signals — deep vs shallow, categories, passive vs active.</p>
+      </header>
+
+      <section class="card">
+        <h2>Overview</h2>
+        <div class="stats-row">
+          <div class="stat">
+            <span class="stat-label">Active time</span>
+            <span class="stat-value" id="totalActive">—</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Idle / away</span>
+            <span class="stat-value" id="idleTime">—</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Deep work streak</span>
+            <span class="stat-value" id="streak">—</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Deep vs shallow</h2>
+        <div class="chart-wrap">
+          <canvas id="deepShallowPie" width="200" height="200" aria-label="Deep versus shallow work"></canvas>
+          <ul class="legend" id="deepShallowLegend"></ul>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Categories</h2>
+        <div class="scroll-x scroll-x--chart" title="Scroll horizontally if labels are clipped">
+          <canvas id="categoryBars" width="400" height="160" aria-label="Category breakdown"></canvas>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Passive vs active learning</h2>
+        <div class="stats-row two">
+          <div class="stat">
+            <span class="stat-label">Active learning</span>
+            <span class="stat-value" id="activeLearn">—</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Passive consumption</span>
+            <span class="stat-value" id="passive">—</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Timeline (by hour)</h2>
+        <p class="hint">Stacked time on sites while Chrome was focused — not idle.</p>
+        <div class="timeline-wrap scroll-x scroll-x--chart" title="Scroll horizontally to see all hours">
+          <canvas id="timeline" width="520" height="200" aria-label="Hourly activity"></canvas>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Insights</h2>
+        <ul class="insights" id="insights"></ul>
+      </section>
+
+      <footer class="footer">
+        <button type="button" class="btn" id="exportBtn">Export JSON</button>
+        <button type="button" class="btn secondary" id="refreshBtn">Refresh</button>
+      </footer>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

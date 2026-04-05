@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Smart Learning Tracker",
+  "version": "1.0.0",
+  "description": "Analyzes browsing behavior for learning patterns: deep work, categories, passive vs active time, and insights.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "idle",
+    "alarms",
+    "notifications"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Smart Learning Tracker"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

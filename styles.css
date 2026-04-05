@@ -1,0 +1,206 @@
+/* Smart Learning Tracker — popup dashboard */
+:root {
+  --bg: #0f1419;
+  --card: #1a2332;
+  --border: #2d3a4d;
+  --text: #e7ecf3;
+  --muted: #8b9cb3;
+  --accent: #3d8bfd;
+  --coding: #22c55e;
+  --learning: #38bdf8;
+  --entertainment: #f472b6;
+  --other: #94a3b8;
+  --deep: #6366f1;
+  --shallow: #f59e0b;
+  --radius: 10px;
+  --font: system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 360px;
+  max-width: 400px;
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.45;
+}
+
+.app {
+  padding: 14px 16px 20px;
+}
+
+.header h1 {
+  margin: 0 0 6px;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-top: 12px;
+}
+
+.card h2 {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.stats-row.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-weight: 650;
+  font-size: 14px;
+}
+
+.chart-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.bar-wrap {
+  justify-content: stretch;
+}
+
+.bar-wrap canvas {
+  width: 100%;
+  height: auto;
+}
+
+/* Horizontal scroll when chart intrinsic width exceeds the popup (~360–400px). */
+.scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.scroll-x--chart {
+  margin: 0 -4px;
+  padding-bottom: 4px;
+}
+
+.scroll-x--chart canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: none;
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.hint {
+  margin: -4px 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.timeline-wrap:not(.scroll-x) canvas {
+  width: 100%;
+  height: auto;
+}
+
+.insights {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.insights li {
+  margin-bottom: 8px;
+}
+
+.insights li:last-child {
+  margin-bottom: 0;
+}
+
+.footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn:hover {
+  filter: brightness(1.08);
+}
+
+.btn.secondary {
+  background: var(--border);
+  color: var(--text);
+}
