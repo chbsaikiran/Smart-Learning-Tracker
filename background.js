@@ -270,7 +270,7 @@ function pruneSwitchTimestamps() {
  */
 function allocateDeepShallow(seconds) {
   const dwellMs = Date.now() - state.tabFocusStarted;
-  const switches10m = switchesInLastMinutes(10);
+  const switches10m = switchesInLastMinutes(5);
   const deepEligible = dwellMs >= 5 * 60 * 1000 && switches10m <= 5;
   const shallowHint = dwellMs < 2 * 60 * 1000 || switches10m >= 6;
 
