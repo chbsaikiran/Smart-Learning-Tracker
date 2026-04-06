@@ -83,6 +83,8 @@ const LEARNING_HOST_SUBSTR = [
   "medium.com",
   "coursera.org",
   "udemy.com",
+  "twitter.com",
+  "x.com",
   "freecodecamp.org",
   "w3schools.com",
   "realpython.com",
@@ -96,8 +98,6 @@ const ENTERTAINMENT_HOSTS = [
   "netflix.com",
   "facebook.com",
   "instagram.com",
-  "twitter.com",
-  "x.com",
   "tiktok.com",
   "twitch.tv",
   "reddit.com",
@@ -270,7 +270,7 @@ function pruneSwitchTimestamps() {
 function allocateDeepShallow(seconds) {
   const dwellMs = Date.now() - state.tabFocusStarted;
   const switches10m = switchesInLastMinutes(10);
-  const deepEligible = dwellMs >= 10 * 60 * 1000 && switches10m <= 5;
+  const deepEligible = dwellMs >= 5 * 60 * 1000 && switches10m <= 5;
   const shallowHint = dwellMs < 2 * 60 * 1000 || switches10m >= 6;
 
   if (deepEligible && !shallowHint) return { deep: seconds, shallow: 0 };
