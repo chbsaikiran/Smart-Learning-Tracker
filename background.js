@@ -122,8 +122,8 @@ const LEARNING_TITLE_RE =
 const state = {
   lastUpdate: Date.now(),
   idleState: "active",
-  /** False when all Chrome windows unfocused — time accrues as idle/away, not site time */
-  windowFocused: true,
+  /** True only when a normal Chrome window actually has OS focus (see initWindowAndTabState). */
+  windowFocused: false,
   activeTabId: null,
   activeWindowId: null,
   /** Cached from last tab query */
@@ -410,6 +410,11 @@ async function updateDeepStreakIfQualified(dateKey, record) {
  */
 async function flushTime() {
   return withStorageLock(async () => {
+    if (!flushedOnce) {
+      await initWindowAndTabState();
+      flushedOnce = true;
+    }
+
     const now = Date.now();
     const rawDelta = now - state.lastUpdate;
     state.lastUpdate = now;
@@ -418,13 +423,21 @@ async function flushTime() {
     let deltaSec = Math.round(rawDelta / 1000);
     if (deltaSec > SANITY_MAX_DELTA_SEC) deltaSec = SANITY_MAX_DELTA_SEC;
 
+    if (state.windowFocused && state.activeTabId == null) {
+      await refreshActiveTab();
+      if (state.activeTabId == null) {
+        await initWindowAndTabState();
+      }
+    }
+
     const longGap = rawDelta >= GAP_THRESHOLD_MS;
 
     /** True while user could be reading a visible page (no mouse required). */
     const browsingContext =
       state.windowFocused && state.activeTabId != null && state.idleState !== "locked";
 
-    // chrome.idle "idle" is ignored for site attribution; locked / no tab / blur still apply.
+    // Away from Chrome, no tab, or OS/screen locked → idle (not site time). chrome.idle "idle"
+    // alone does not count as away — supports reading without mouse movement.
     const notCountingSiteTime =
       !state.windowFocused || state.activeTabId == null || state.idleState === "locked";
 
@@ -476,10 +489,39 @@ async function refreshActiveTab() {
   }
 }
 
+/**
+ * Reconcile focus + active tab with Chrome. Fixes “windowFocused true but activeTabId null”
+ * (everything counted as idle) and cold-start desync.
+ */
+async function initWindowAndTabState() {
+  try {
+    const all = await chrome.windows.getAll({ windowTypes: ["normal"], populate: true });
+    const focusedWin = all.find((w) => w.focused);
+    if (!focusedWin) {
+      state.windowFocused = false;
+      return;
+    }
+    state.windowFocused = true;
+    const tab = focusedWin.tabs?.find((t) => t.active);
+    if (tab?.id != null) {
+      state.activeTabId = tab.id;
+      state.activeWindowId = focusedWin.id;
+      state.currentUrl = tab.url || "";
+      state.currentTitle = tab.title || "";
+      state.category = classifyActivity(state.currentUrl, state.currentTitle);
+    }
+  } catch {
+    await refreshActiveTab();
+    if (state.activeTabId != null) state.windowFocused = true;
+  }
+}
+
+let flushedOnce = false;
+
 chrome.runtime.onInstalled.addListener(async () => {
   chrome.idle.setDetectionInterval(60);
   chrome.alarms.create("slt_flush", { periodInMinutes: 1 });
-  await refreshActiveTab();
+  await initWindowAndTabState();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -488,7 +530,7 @@ chrome.runtime.onStartup.addListener(async () => {
   if (!alarms.some((a) => a.name === "slt_flush")) {
     chrome.alarms.create("slt_flush", { periodInMinutes: 1 });
   }
-  await refreshActiveTab();
+  await initWindowAndTabState();
 });
 
 chrome.idle.onStateChanged.addListener((newState) => {
@@ -503,6 +545,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   if (prevTab != null && prevTab !== activeInfo.tabId) {
     await recordTabSwitch();
   }
+  state.windowFocused = true;
   state.tabFocusStarted = Date.now();
   state.activeTabId = activeInfo.tabId;
   try {
@@ -571,12 +614,29 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "heartbeat" && sender.tab?.id != null) {
-    state.lastMediaPlaying = !!msg.mediaPlaying;
-    state.lastMediaTabId = sender.tab.id;
-    state.lastMediaAt = Date.now();
-    if (sender.tab.id === state.activeTabId) {
-      flushTime().catch(() => {});
-    }
+    (async () => {
+      state.lastMediaPlaying = !!msg.mediaPlaying;
+      state.lastMediaTabId = sender.tab.id;
+      state.lastMediaAt = Date.now();
+      try {
+        if (sender.tab.active) {
+          const w = await chrome.windows.get(sender.tab.windowId);
+          if (w.focused) {
+            state.windowFocused = true;
+            state.activeTabId = sender.tab.id;
+            state.activeWindowId = sender.tab.windowId;
+            if (sender.tab.url) state.currentUrl = sender.tab.url;
+            if (sender.tab.title != null) state.currentTitle = sender.tab.title;
+            state.category = classifyActivity(state.currentUrl, state.currentTitle);
+          }
+        }
+        if (sender.tab.id === state.activeTabId) {
+          await flushTime();
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
     sendResponse({ ok: true });
     return true;
   }
@@ -683,9 +743,8 @@ async function maybeSendDailySummary() {
   });
 }
 
-// Initial idle state + tab
 chrome.idle.queryState(60, (s) => {
   state.idleState = s;
   state.lastUpdate = Date.now();
-  refreshActiveTab();
+  initWindowAndTabState().catch(() => {});
 });
