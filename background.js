@@ -91,6 +91,7 @@ const LEARNING_HOST_SUBSTR = [
   "realpython.com",
   "kotlinlang.org",
   "learn.microsoft.com",
+  "canvas.instructure.com",
   "docs.",
 ];
 
