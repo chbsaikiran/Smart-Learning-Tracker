@@ -205,3 +205,12 @@ body {
   background: var(--border);
   color: var(--text);
 }
+
+.btn.danger {
+  background: #7f1d1d;
+  color: #fff;
+}
+
+.btn.danger:hover {
+  filter: brightness(1.1);
+}

@@ -265,4 +265,23 @@ async function exportJson() {
 
 document.getElementById("refreshBtn").addEventListener("click", () => refresh());
 document.getElementById("exportBtn").addEventListener("click", () => exportJson());
+document.getElementById("resetBtn").addEventListener("click", async () => {
+  if (
+    !confirm(
+      "Clear all Smart Learning Tracker data and start fresh? This cannot be undone."
+    )
+  ) {
+    return;
+  }
+  await new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: "resetTracking" }, (res) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(res);
+    });
+  });
+  await refresh();
+});
 refresh();

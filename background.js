@@ -520,6 +520,29 @@ async function initWindowAndTabState() {
 
 let flushedOnce = false;
 
+/** Remove all stored aggregates + session log and reset in-memory tracking state. */
+async function resetAllTracking() {
+  return withStorageLock(async () => {
+    const all = await chrome.storage.local.get(null);
+    const toRemove = Object.keys(all).filter((k) => k.startsWith("slt_"));
+    if (toRemove.length) await chrome.storage.local.remove(toRemove);
+    try {
+      await activityLogStorage().remove(STORAGE_LOG_KEY);
+    } catch {
+      /* ignore */
+    }
+    state.lastUpdate = Date.now();
+    state.switchTimestamps = [];
+    state.blurRememberTabId = null;
+    state.tabFocusStarted = Date.now();
+    state.lastMediaPlaying = false;
+    state.lastMediaTabId = null;
+    state.lastMediaAt = 0;
+    flushedOnce = false;
+    await initWindowAndTabState();
+  });
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   chrome.idle.setDetectionInterval(60);
   chrome.alarms.create("slt_flush", { periodInMinutes: 1 });
@@ -646,6 +669,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     buildInsights()
       .then((insights) => sendResponse({ insights }))
       .catch(() => sendResponse({ insights: [] }));
+    return true;
+  }
+  if (msg?.type === "resetTracking") {
+    resetAllTracking()
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
   return false;
