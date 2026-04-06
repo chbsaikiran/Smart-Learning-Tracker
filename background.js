@@ -21,9 +21,8 @@ function activityLogStorage() {
 const LOG_MAX_ENTRIES = 2500;
 
 /**
- * If no flush ran for this long, the service worker was likely frozen, the machine slept,
- * or Chrome was locked — attribute elapsed time to gapSeconds (not current tab) so nothing
- * is discarded and category totals are not overwritten by races.
+ * If no flush ran for this long *and* Chrome is not in a normal reading context (see flushTime),
+ * treat elapsed time as gapSeconds (sleep / lock / away) instead of wrongly attributing to a tab.
  */
 const GAP_THRESHOLD_MS = 5 * 60 * 1000;
 /** Ignore absurd clock jumps in one flush (still preserves storage via gap path). */
@@ -393,11 +392,18 @@ async function flushTime() {
 
     const longGap = rawDelta >= GAP_THRESHOLD_MS;
 
+    /** True while user could be reading a visible page (no mouse required). */
+    const browsingContext =
+      state.windowFocused && state.activeTabId != null && state.idleState !== "locked";
+
     // chrome.idle "idle" is ignored for site attribution; locked / no tab / blur still apply.
     const notCountingSiteTime =
       !state.windowFocused || state.activeTabId == null || state.idleState === "locked";
 
-    if (longGap) {
+    // Long silence used to always become gapSeconds; the popup adds gap to "idle", so reading
+    // without input (throttled timers / few flushes) looked like idle. Only use gap when we are
+    // clearly not in front of a tab (away, locked, or unknown tab).
+    if (longGap && !browsingContext) {
       await applyGapSeconds(deltaSec);
       await appendLogUnlocked({
         type: "gap_flush",

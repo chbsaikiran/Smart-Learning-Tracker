@@ -31,6 +31,6 @@ On install, Chrome will ask for access to **all sites** so the content script ca
 
 ## Notes
 
-- **Sleep / long suspend**: If no flush runs for several minutes (worker frozen, machine asleep, etc.), elapsed seconds are stored in **`gapSeconds`** for that calendar day so totals are not dropped and category rows are not overwritten by parallel writes. The popup combines **idle + gap** in “Idle / away / sleep gaps”.
+- **Sleep / long suspend**: If no flush runs for several minutes **and** Chrome is unfocused, has no active tab, or the session is **locked**, elapsed seconds go to **`gapSeconds`** (so they are not mis-attributed to whatever tab was last active). If Chrome is focused on a tab and not locked, long stretches without flushes (e.g. reading without moving the mouse) are **counted as active time** on the current tab. The popup still combines **idle + gap** for the “away / sleep gaps” line.
 - **Deep work** here means long stretches on the **same tab** with **relatively few** recent tab switches; **shallow** covers short bursts and heavy switching.
 - **Passive consumption** uses **media playing** signals plus “video-first” hosts (e.g. Netflix); **active learning** uses coding/learning sites and YouTube titles that match learning keywords.
