@@ -85,6 +85,7 @@ const LEARNING_HOST_SUBSTR = [
   "udemy.com",
   "twitter.com",
   "x.com",
+  "chatgpt.com",
   "freecodecamp.org",
   "w3schools.com",
   "realpython.com",
