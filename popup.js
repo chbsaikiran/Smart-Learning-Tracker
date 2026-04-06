@@ -10,6 +10,7 @@ const STORAGE_LOG_KEY = "slt_activity_log";
 const COLORS = {
   coding: "#22c55e",
   learning: "#38bdf8",
+  newspaper: "#ca8a04",
   entertainment: "#f472b6",
   other: "#94a3b8",
   deep: "#6366f1",
@@ -43,7 +44,7 @@ function normalizeDayRecord(raw, dateKey) {
       dateKey,
       totalActiveSeconds: 0,
       idleSeconds: 0,
-      byCategory: { coding: 0, learning: 0, entertainment: 0, other: 0 },
+      byCategory: { coding: 0, learning: 0, newspaper: 0, entertainment: 0, other: 0 },
       deepSeconds: 0,
       shallowSeconds: 0,
       passiveSeconds: 0,
@@ -53,19 +54,34 @@ function normalizeDayRecord(raw, dateKey) {
       hourlyByCategory: Array.from({ length: 24 }, () => ({
         coding: 0,
         learning: 0,
+        newspaper: 0,
         entertainment: 0,
         other: 0,
       })),
     };
   }
+  const hourKeys = ["coding", "learning", "newspaper", "entertainment", "other"];
+  if (!raw.byCategory) {
+    raw.byCategory = { coding: 0, learning: 0, newspaper: 0, entertainment: 0, other: 0 };
+  }
+  hourKeys.forEach((k) => {
+    if (typeof raw.byCategory[k] !== "number") raw.byCategory[k] = 0;
+  });
   const hourlyByCategory = raw.hourlyByCategory;
   if (!hourlyByCategory || hourlyByCategory.length !== 24) {
     raw.hourlyByCategory = Array.from({ length: 24 }, () => ({
       coding: 0,
       learning: 0,
+      newspaper: 0,
       entertainment: 0,
       other: 0,
     }));
+  } else {
+    raw.hourlyByCategory.forEach((bucket) => {
+      hourKeys.forEach((k) => {
+        if (typeof bucket[k] !== "number") bucket[k] = 0;
+      });
+    });
   }
   if (typeof raw.gapSeconds !== "number") raw.gapSeconds = 0;
   return raw;
@@ -110,7 +126,7 @@ function drawCategoryBars(canvas, byCategory) {
   const w = canvas.width;
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
-  const keys = ["coding", "learning", "entertainment", "other"];
+  const keys = ["coding", "learning", "newspaper", "entertainment", "other"];
   const max = Math.max(1, ...keys.map((k) => byCategory[k] || 0));
   const barH = 22;
   const gap = 10;
@@ -143,7 +159,12 @@ function drawTimeline(canvas, hourlyByCategory) {
   let max = 1;
   for (let hr = 0; hr < 24; hr++) {
     const b = hourlyByCategory[hr];
-    const sum = (b.coding || 0) + (b.learning || 0) + (b.entertainment || 0) + (b.other || 0);
+    const sum =
+      (b.coding || 0) +
+      (b.learning || 0) +
+      (b.newspaper || 0) +
+      (b.entertainment || 0) +
+      (b.other || 0);
     if (sum > max) max = sum;
   }
   const chartH = h - 36;
@@ -151,7 +172,7 @@ function drawTimeline(canvas, hourlyByCategory) {
     const b = hourlyByCategory[hr];
     const x = 32 + hr * barW;
     let acc = 0;
-    const order = ["coding", "learning", "entertainment", "other"];
+    const order = ["coding", "learning", "newspaper", "entertainment", "other"];
     order.forEach((k) => {
       const seg = b[k] || 0;
       if (seg <= 0) return;

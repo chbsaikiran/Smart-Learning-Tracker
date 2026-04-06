@@ -59,6 +59,22 @@ const CODING_HOSTS = [
   "kaggle.com",
 ];
 
+/** Print / epaper reading — The Hindu (incl. Frontline), Times of India epapers */
+const NEWSPAPER_HOST_SUBSTR = [
+  "thehindu.com", // www, frontline.thehindu.com, etc.
+  "timesofindia.indiatimes.com",
+  "timesofindia.com",
+  "epaper.timesofindia",
+  "toiplus.timesofindia",
+];
+
+function isNewspaperUrl(urlLower) {
+  if (NEWSPAPER_HOST_SUBSTR.some((h) => urlLower.includes(h))) return true;
+  // BCCL epaper / archive viewers sometimes live on indiatimes.com with epaper in path or host
+  if (urlLower.includes("indiatimes.com") && urlLower.includes("epaper")) return true;
+  return false;
+}
+
 const LEARNING_HOST_SUBSTR = [
   "developer.mozilla.org",
   "mdn.io",
@@ -138,7 +154,7 @@ function emptyDayRecord(dateKey) {
     dateKey,
     totalActiveSeconds: 0,
     idleSeconds: 0,
-    byCategory: { coding: 0, learning: 0, entertainment: 0, other: 0 },
+    byCategory: { coding: 0, learning: 0, newspaper: 0, entertainment: 0, other: 0 },
     deepSeconds: 0,
     shallowSeconds: 0,
     passiveSeconds: 0,
@@ -149,6 +165,7 @@ function emptyDayRecord(dateKey) {
     hourlyByCategory: Array.from({ length: 24 }, () => ({
       coding: 0,
       learning: 0,
+      newspaper: 0,
       entertainment: 0,
       other: 0,
     })),
@@ -162,9 +179,9 @@ function migrateDayRecord(rec, dateKey) {
   if (!rec || typeof rec !== "object") return emptyDayRecord(dateKey);
   if (typeof rec.gapSeconds !== "number") rec.gapSeconds = 0;
   if (!rec.byCategory) {
-    rec.byCategory = { coding: 0, learning: 0, entertainment: 0, other: 0 };
+    rec.byCategory = { coding: 0, learning: 0, newspaper: 0, entertainment: 0, other: 0 };
   }
-  ["coding", "learning", "entertainment", "other"].forEach((k) => {
+  ["coding", "learning", "newspaper", "entertainment", "other"].forEach((k) => {
     if (typeof rec.byCategory[k] !== "number") rec.byCategory[k] = 0;
   });
   if (!Array.isArray(rec.hourlyTabSwitches) || rec.hourlyTabSwitches.length !== 24) {
@@ -174,9 +191,17 @@ function migrateDayRecord(rec, dateKey) {
     rec.hourlyByCategory = Array.from({ length: 24 }, () => ({
       coding: 0,
       learning: 0,
+      newspaper: 0,
       entertainment: 0,
       other: 0,
     }));
+  } else {
+    const hourKeys = ["coding", "learning", "newspaper", "entertainment", "other"];
+    rec.hourlyByCategory.forEach((bucket) => {
+      hourKeys.forEach((k) => {
+        if (typeof bucket[k] !== "number") bucket[k] = 0;
+      });
+    });
   }
   return rec;
 }
@@ -205,7 +230,7 @@ function domainFromUrl(url) {
 
 /**
  * Rule-based category from URL + title (no ML).
- * Order: coding domains → entertainment (with YouTube learning exception) → learning hosts/keywords → other.
+ * Order: coding → newspaper (The Hindu / TOI epapers / Frontline) → entertainment → learning → other.
  */
 function classifyActivity(url, title) {
   const u = (url || "").toLowerCase();
@@ -213,6 +238,8 @@ function classifyActivity(url, title) {
   const onYoutube = u.includes("youtube.com") || u.includes("youtu.be");
 
   if (CODING_HOSTS.some((h) => u.includes(h))) return "coding";
+
+  if (isNewspaperUrl(u)) return "newspaper";
 
   if (ENTERTAINMENT_HOSTS.some((h) => u.includes(h))) {
     if (onYoutube && LEARNING_TITLE_RE.test(title || "")) return "learning";
@@ -256,7 +283,7 @@ function isPassiveContext(url, title, category, mediaPlaying) {
   const onYoutube = u.includes("youtube.com");
   const learningYt = onYoutube && LEARNING_TITLE_RE.test(title || "");
 
-  if (category === "coding" || category === "learning") return false;
+  if (category === "coding" || category === "learning" || category === "newspaper") return false;
   if (learningYt) return false;
 
   if (PASSIVE_VIDEO_HOSTS.some((h) => u.includes(h))) return true;
@@ -266,7 +293,7 @@ function isPassiveContext(url, title, category, mediaPlaying) {
 }
 
 function isActiveLearningContext(category, url, title) {
-  if (category === "coding" || category === "learning") return true;
+  if (category === "coding" || category === "learning" || category === "newspaper") return true;
   const u = (url || "").toLowerCase();
   if (u.includes("youtube.com") && LEARNING_TITLE_RE.test(title || "")) return true;
   return false;
@@ -326,7 +353,8 @@ async function applyActiveSeconds(seconds) {
   record.byCategory[cat] = (record.byCategory[cat] || 0) + seconds;
   record.deepSeconds += deep;
   record.shallowSeconds += shallow;
-  record.hourlyByCategory[hour][cat] += seconds;
+  const hourBucket = record.hourlyByCategory[hour];
+  hourBucket[cat] = (hourBucket[cat] || 0) + seconds;
 
   if (isPassiveContext(state.currentUrl, state.currentTitle, cat, mediaPlaying)) {
     record.passiveSeconds += seconds;
