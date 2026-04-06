@@ -5,6 +5,7 @@
 
 const STORAGE_DAY_PREFIX = "slt_day_";
 const STORAGE_META_KEY = "slt_meta";
+const STORAGE_LOG_KEY = "slt_activity_log";
 
 const COLORS = {
   coding: "#22c55e",
@@ -47,6 +48,7 @@ function normalizeDayRecord(raw, dateKey) {
       shallowSeconds: 0,
       passiveSeconds: 0,
       activeLearningSeconds: 0,
+      gapSeconds: 0,
       hourlyTabSwitches: Array(24).fill(0),
       hourlyByCategory: Array.from({ length: 24 }, () => ({
         coding: 0,
@@ -65,6 +67,7 @@ function normalizeDayRecord(raw, dateKey) {
       other: 0,
     }));
   }
+  if (typeof raw.gapSeconds !== "number") raw.gapSeconds = 0;
   return raw;
 }
 
@@ -175,7 +178,9 @@ async function loadToday() {
 
 function render(rec, meta, insights) {
   document.getElementById("totalActive").textContent = formatDuration(rec.totalActiveSeconds);
-  document.getElementById("idleTime").textContent = formatDuration(rec.idleSeconds);
+  document.getElementById("idleTime").textContent = formatDuration(
+    (rec.idleSeconds || 0) + (rec.gapSeconds || 0)
+  );
   document.getElementById("streak").textContent =
     (meta.deepWorkStreak || 0) > 0 ? `${meta.deepWorkStreak} day(s)` : "—";
   document.getElementById("activeLearn").textContent = formatDuration(rec.activeLearningSeconds);
@@ -224,6 +229,10 @@ async function exportJson() {
   Object.keys(all).forEach((k) => {
     if (k.startsWith("slt_")) exportObj[k] = all[k];
   });
+  if (chrome.storage.session) {
+    const sess = await chrome.storage.session.get(STORAGE_LOG_KEY);
+    if (sess[STORAGE_LOG_KEY]) exportObj[STORAGE_LOG_KEY] = sess[STORAGE_LOG_KEY];
+  }
   const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

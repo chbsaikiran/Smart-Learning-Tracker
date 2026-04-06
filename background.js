@@ -9,6 +9,36 @@
 
 const STORAGE_DAY_PREFIX = "slt_day_";
 const STORAGE_META_KEY = "slt_meta";
+/**
+ * Detailed session log in chrome.storage.session when available — survives sleep/lock/SW restarts;
+ * cleared when the browser process exits (full quit). Falls back to local if session API missing.
+ */
+const STORAGE_LOG_KEY = "slt_activity_log";
+
+function activityLogStorage() {
+  return chrome.storage.session ?? chrome.storage.local;
+}
+const LOG_MAX_ENTRIES = 2500;
+
+/**
+ * If no flush ran for this long, the service worker was likely frozen, the machine slept,
+ * or Chrome was locked — attribute elapsed time to gapSeconds (not current tab) so nothing
+ * is discarded and category totals are not overwritten by races.
+ */
+const GAP_THRESHOLD_MS = 5 * 60 * 1000;
+/** Ignore absurd clock jumps in one flush (still preserves storage via gap path). */
+const SANITY_MAX_DELTA_SEC = 24 * 3600;
+
+/**
+ * Serialize all chrome.storage.local read–modify–write paths. Parallel flushes after resume
+ * were racing and overwriting each other, which looked like “lost” data in exports.
+ */
+let storageLock = Promise.resolve();
+function withStorageLock(task) {
+  const run = storageLock.then(() => task());
+  storageLock = run.catch(() => {});
+  return run;
+}
 
 /** Hosts / patterns for rule-based classification */
 const CODING_HOSTS = [
@@ -123,8 +153,47 @@ function emptyDayRecord(dateKey) {
       entertainment: 0,
       other: 0,
     })),
+    /** Sleep / lock / suspended worker — time preserved but not assigned to a site */
+    gapSeconds: 0,
     lastUpdated: Date.now(),
   };
+}
+
+function migrateDayRecord(rec, dateKey) {
+  if (!rec || typeof rec !== "object") return emptyDayRecord(dateKey);
+  if (typeof rec.gapSeconds !== "number") rec.gapSeconds = 0;
+  if (!rec.byCategory) {
+    rec.byCategory = { coding: 0, learning: 0, entertainment: 0, other: 0 };
+  }
+  ["coding", "learning", "entertainment", "other"].forEach((k) => {
+    if (typeof rec.byCategory[k] !== "number") rec.byCategory[k] = 0;
+  });
+  if (!Array.isArray(rec.hourlyTabSwitches) || rec.hourlyTabSwitches.length !== 24) {
+    rec.hourlyTabSwitches = Array(24).fill(0);
+  }
+  if (!Array.isArray(rec.hourlyByCategory) || rec.hourlyByCategory.length !== 24) {
+    rec.hourlyByCategory = Array.from({ length: 24 }, () => ({
+      coding: 0,
+      learning: 0,
+      entertainment: 0,
+      other: 0,
+    }));
+  }
+  return rec;
+}
+
+/**
+ * Append to session log. Call only inside withStorageLock, or wrap with withStorageLock.
+ */
+async function appendLogUnlocked(entry) {
+  const area = activityLogStorage();
+  const data = await area.get(STORAGE_LOG_KEY);
+  const log = data[STORAGE_LOG_KEY];
+  const entries = Array.isArray(log?.entries) ? log.entries.slice() : [];
+  entries.push({ t: Date.now(), ...entry });
+  const trimmed =
+    entries.length > LOG_MAX_ENTRIES ? entries.slice(-LOG_MAX_ENTRIES) : entries;
+  await area.set({ [STORAGE_LOG_KEY]: { entries: trimmed } });
 }
 
 function domainFromUrl(url) {
@@ -207,7 +276,13 @@ function isActiveLearningContext(category, url, title) {
 async function loadDayRecord(dateKey) {
   const key = STORAGE_DAY_PREFIX + dateKey;
   const data = await chrome.storage.local.get(key);
-  if (data[key]) return data[key];
+  if (data[key]) {
+    const raw =
+      typeof structuredClone === "function"
+        ? structuredClone(data[key])
+        : JSON.parse(JSON.stringify(data[key]));
+    return migrateDayRecord(raw, dateKey);
+  }
   return emptyDayRecord(dateKey);
 }
 
@@ -273,6 +348,14 @@ async function applyIdleSeconds(seconds) {
   await saveDayRecord(record);
 }
 
+async function applyGapSeconds(seconds) {
+  if (seconds <= 0) return;
+  const dateKey = todayKey();
+  const record = await loadDayRecord(dateKey);
+  record.gapSeconds = (record.gapSeconds || 0) + seconds;
+  await saveDayRecord(record);
+}
+
 /**
  * Streak: consecutive local days with ≥1h deep work (bonus). Runs at most once per dateKey.
  */
@@ -296,39 +379,53 @@ async function updateDeepStreakIfQualified(dateKey, record) {
 
 /**
  * Flush elapsed time since lastUpdate into storage.
+ * Runs under withStorageLock so concurrent resumes don’t clobber the same day key.
  */
 async function flushTime() {
-  const now = Date.now();
-  const rawDelta = now - state.lastUpdate;
-  state.lastUpdate = now;
-  if (rawDelta <= 0) return;
+  return withStorageLock(async () => {
+    const now = Date.now();
+    const rawDelta = now - state.lastUpdate;
+    state.lastUpdate = now;
+    if (rawDelta <= 0) return;
 
-  // Avoid huge jumps after sleep / suspended worker
-  const deltaSec = Math.min(Math.round(rawDelta / 1000), 300);
+    let deltaSec = Math.round(rawDelta / 1000);
+    if (deltaSec > SANITY_MAX_DELTA_SEC) deltaSec = SANITY_MAX_DELTA_SEC;
 
-  // chrome.idle becomes "idle" after no keyboard/mouse for the detection interval, which
-  // mis-classifies reading/scrolling-less study as "idle". Only treat as away-from-content
-  // when Chrome isn’t focused, we don’t have a tab, or the system is locked.
-  const notCountingSiteTime =
-    !state.windowFocused || state.activeTabId == null || state.idleState === "locked";
+    const longGap = rawDelta >= GAP_THRESHOLD_MS;
 
-  if (notCountingSiteTime) {
-    await applyIdleSeconds(deltaSec);
-    return;
-  }
+    // chrome.idle "idle" is ignored for site attribution; locked / no tab / blur still apply.
+    const notCountingSiteTime =
+      !state.windowFocused || state.activeTabId == null || state.idleState === "locked";
 
-  await applyActiveSeconds(deltaSec);
+    if (longGap) {
+      await applyGapSeconds(deltaSec);
+      await appendLogUnlocked({
+        type: "gap_flush",
+        reason: "no_flush_interval",
+        seconds: deltaSec,
+      });
+      return;
+    }
+
+    if (notCountingSiteTime) {
+      await applyIdleSeconds(deltaSec);
+    } else {
+      await applyActiveSeconds(deltaSec);
+    }
+  });
 }
 
-function recordTabSwitch() {
+async function recordTabSwitch() {
   const h = new Date().getHours();
   const dateKey = todayKey();
-  loadDayRecord(dateKey).then((rec) => {
-    rec.hourlyTabSwitches[h] = (rec.hourlyTabSwitches[h] || 0) + 1;
-    saveDayRecord(rec);
-  });
   state.switchTimestamps.push(Date.now());
   pruneSwitchTimestamps();
+  await withStorageLock(async () => {
+    const rec = await loadDayRecord(dateKey);
+    rec.hourlyTabSwitches[h] = (rec.hourlyTabSwitches[h] || 0) + 1;
+    await saveDayRecord(rec);
+    await appendLogUnlocked({ type: "tab_switch", hour: h });
+  });
 }
 
 async function refreshActiveTab() {
@@ -363,7 +460,6 @@ chrome.runtime.onStartup.addListener(async () => {
 chrome.idle.onStateChanged.addListener((newState) => {
   flushTime().then(() => {
     state.idleState = newState;
-    state.lastUpdate = Date.now();
   });
 });
 
@@ -371,7 +467,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   await flushTime();
   const prevTab = state.activeTabId;
   if (prevTab != null && prevTab !== activeInfo.tabId) {
-    recordTabSwitch();
+    await recordTabSwitch();
   }
   state.tabFocusStarted = Date.now();
   state.activeTabId = activeInfo.tabId;
@@ -520,36 +616,37 @@ async function buildInsights() {
  * Once per day at summaryHour: notify about *yesterday* (complete day).
  */
 async function maybeSendDailySummary() {
-  const now = new Date();
-  const meta = await loadMeta();
-  const summaryHour = meta.summaryHour ?? 9;
-  // Any wake during this hour can deliver the summary (MV3 workers are not guaranteed at :00).
-  if (now.getHours() !== summaryHour) return;
+  return withStorageLock(async () => {
+    const now = new Date();
+    const meta = await loadMeta();
+    const summaryHour = meta.summaryHour ?? 9;
+    if (now.getHours() !== summaryHour) return;
 
-  const y = new Date(now);
-  y.setDate(y.getDate() - 1);
-  const yKey = todayKey(y);
-  if (meta.lastSummaryDay === yKey) return;
+    const y = new Date(now);
+    y.setDate(y.getDate() - 1);
+    const yKey = todayKey(y);
+    if (meta.lastSummaryDay === yKey) return;
 
-  const rec = await loadDayRecord(yKey);
-  if (rec.totalActiveSeconds < 60) {
+    const rec = await loadDayRecord(yKey);
+    if (rec.totalActiveSeconds < 60) {
+      meta.lastSummaryDay = yKey;
+      await saveMeta(meta);
+      return;
+    }
+
+    const deepMin = Math.round(rec.deepSeconds / 60);
+    const title = "Smart Learning Tracker — yesterday";
+    const message = `Active: ${Math.round(rec.totalActiveSeconds / 60)} min · Deep: ${deepMin} min · Shallow: ${Math.round(rec.shallowSeconds / 60)} min`;
+
+    await chrome.notifications.create(`slt_summary_${yKey}`, {
+      type: "basic",
+      title,
+      message,
+    });
+
     meta.lastSummaryDay = yKey;
     await saveMeta(meta);
-    return;
-  }
-
-  const deepMin = Math.round(rec.deepSeconds / 60);
-  const title = "Smart Learning Tracker — yesterday";
-  const message = `Active: ${Math.round(rec.totalActiveSeconds / 60)} min · Deep: ${deepMin} min · Shallow: ${Math.round(rec.shallowSeconds / 60)} min`;
-
-  await chrome.notifications.create(`slt_summary_${yKey}`, {
-    type: "basic",
-    title,
-    message,
   });
-
-  meta.lastSummaryDay = yKey;
-  await saveMeta(meta);
 }
 
 // Initial idle state + tab
