@@ -306,8 +306,11 @@ async function flushTime() {
   // Avoid huge jumps after sleep / suspended worker
   const deltaSec = Math.min(Math.round(rawDelta / 1000), 300);
 
+  // chrome.idle becomes "idle" after no keyboard/mouse for the detection interval, which
+  // mis-classifies reading/scrolling-less study as "idle". Only treat as away-from-content
+  // when Chrome isn’t focused, we don’t have a tab, or the system is locked.
   const notCountingSiteTime =
-    state.idleState !== "active" || !state.windowFocused || state.activeTabId == null;
+    !state.windowFocused || state.activeTabId == null || state.idleState === "locked";
 
   if (notCountingSiteTime) {
     await applyIdleSeconds(deltaSec);
