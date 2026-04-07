@@ -2,6 +2,10 @@
 
 Chrome extension (Manifest V3) that estimates **deep vs shallow browsing**, **coding / learning / entertainment** mix, **passive vs active learning** (using tab media hints), and **rule-based insights**. **Daily aggregates** live in `chrome.storage.local` and are **not** cleared on sleep, lock, or hibernate. A **session activity log** (`slt_activity_log`) is stored in **`chrome.storage.session`** when supported: it survives sleep/lock and service worker restarts, and is **cleared when the browser process fully exits** (best available signal for “session end”; extensions cannot detect OS shutdown directly).
 
+### YouTube Video Demo of Chrome Extension
+
+https://www.youtube.com/watch?v=WRmiDE88qPc
+
 ## Load the extension in Chrome
 
 1. Open Chrome and go to `chrome://extensions`.
